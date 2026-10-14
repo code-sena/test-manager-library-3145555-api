@@ -98,17 +98,17 @@ No se envían credenciales en este recorrido de salud. Para detenerlo, usar Ctrl
 
 ### Estructura y límites del avance
 
-`app/Library/Domain`, `Application/Ports`, `Application/Services` y `Adapters/Outbound`
-reservan las capas del diseño mediante archivos `.gitkeep`. No contienen reglas de negocio
-simuladas. El adaptador HTTP está en `Adapters/Inbound/Http`; la composición del núcleo
+En T-01, `app/Library/Domain`, `Application/Ports`, `Application/Services` y `Adapters/Outbound`
+reservaban las capas del diseño mediante archivos `.gitkeep`. El tercer avance implementa
+el dominio y los casos de uso de socios. El adaptador HTTP está en `Adapters/Inbound/Http`; la composición del núcleo
 tiene su único punto en `app/Providers/LibraryServiceProvider.php`.
 
 Las pruebas comprueban salud sin conexión a la base, prefijo correcto, 404, 405 y error 500
 con el sobre JSON documentado, sin revelar detalles internos incluso en modo debug.
 Esto no acredita autenticación ni el contrato completo de T-16, ni las pruebas de arquitectura de T-19.
 
-Este avance no crea tablas, usuarios, sesiones, tokens ni datos de demostración.
-T-02 y las demás tareas siguen pendientes. Las migraciones vivirán en `database/migrations`.
+T-01 no crea tablas, usuarios, sesiones, tokens ni datos de demostración.
+La migración de T-02 se describe más abajo y vive en `database/migrations`.
 Las variables de despliegue están descritas sin valores secretos en `.env.example`;
 el archivo `.env` real y los registros de ejecución no se versionan.
 
@@ -165,3 +165,48 @@ título/documento no vacíos, usuario normalizado y portada nula o no vacía. Es
 que esas reglas ya estén aplicadas en el motor, ni acredita préstamos, devoluciones o concurrencia.
 
 Los resultados ejecutados están en [evidence/t-02.md](evidence/t-02.md).
+
+## Tercer avance: T-03 a T-06
+
+El dominio contiene objetos de valor para ISBN, cantidad, documento y rango de fechas;
+libros con disponibilidad y baja lógica; socios, usuarios y préstamos con sus líneas.
+Está escrito en PHP nativo, sin importar Laravel, ORM, aplicación ni adaptadores.
+El usuario normaliza su nombre y conserva únicamente un hash opaco; el hash se genera
+en el adaptador de seguridad de una tarea posterior.
+
+Un préstamo admite de uno a tres libros distintos y congela título, ISBN y categoría.
+La política comprueba los ejemplares sin devolver en todos los préstamos del socio y
+bloquea nuevos préstamos si tiene vencidos. El vencimiento es a 14 días; el estado se
+calcula con el instante recibido y los días de atraso cuentan periodos completos de 24 horas.
+La devolución afecta una sola línea y repone un ejemplar; la línea devuelta rechaza otra devolución.
+
+Las operaciones devuelven estados inmutables del préstamo y del inventario. La aplicación
+deberá persistir ambos dentro de una transacción. Estas pruebas no acreditan atomicidad
+en PostgreSQL ni protección contra solicitudes concurrentes; eso corresponde a T-13.
+
+T-06 incluye los casos de uso de crear, buscar y consultar socios detrás de `MemberRepository`,
+con paginación y conteo de libros sin devolver. Se prueban con un repositorio en memoria,
+incluyendo documento duplicado y conflicto al insertar. No hay adaptador de persistencia
+ni nuevas rutas HTTP en este avance. Autenticación y creación exclusiva de bibliotecarios
+siguen en T-07; su exposición HTTP y el rechazo de creación de administradores, en T-16.
+
+### Verificar el núcleo
+
+La construcción del objetivo `test` ejecuta las suites Domain, Application, Architecture y Feature:
+
+```sh
+docker build --target test -t manager-library-api:test .
+```
+
+Con PHP 8.4 y las dependencias de desarrollo instaladas también puede ejecutarse:
+
+```sh
+php vendor/bin/phpunit
+```
+
+La suite Architecture comprueba referencias de nombres del dominio y ejecuta un ciclo
+de préstamo/devolución en un proceso que carga exclusivamente las clases del dominio.
+Es una comprobación inicial de aislamiento; T-19 todavía debe verificar todos los límites
+de arquitectura y el punto único de composición al incorporar los adaptadores.
+
+La evidencia y la correspondencia con las tareas están en [evidence/t-03-t-06.md](evidence/t-03-t-06.md).
