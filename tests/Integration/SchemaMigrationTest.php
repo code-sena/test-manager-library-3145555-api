@@ -105,7 +105,7 @@ final class SchemaMigrationTest extends TestCase
         }
 
         $this->assertSame($expected, $actual);
-        $this->assertSame('UTC', DB::selectOne("SHOW timezone")->TimeZone);
+        $this->assertSame('UTC', DB::selectOne("SELECT current_setting('TimeZone') AS timezone")->timezone);
         $this->assertNotNull(DB::selectOne("SELECT to_regclass('public.migrations') AS name")->name);
     }
 
@@ -127,21 +127,27 @@ final class SchemaMigrationTest extends TestCase
     {
         $actual = [];
         foreach (DB::select(<<<'SQL'
-            SELECT c.conname, child.relname AS child, parent.relname AS parent,
+            SELECT c.conname, child.relname AS child, source.attname AS source_column,
+                   parent.relname AS parent, target.attname AS target_column,
                    c.confdeltype AS delete_action, c.confupdtype AS update_action
             FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
             JOIN pg_class child ON child.oid = c.conrelid
             JOIN pg_class parent ON parent.oid = c.confrelid
+            JOIN pg_attribute source ON source.attrelid = c.conrelid AND source.attnum = c.conkey[1]
+            JOIN pg_attribute target ON target.attrelid = c.confrelid AND target.attnum = c.confkey[1]
             WHERE n.nspname = 'library' AND c.contype = 'f' ORDER BY c.conname
             SQL) as $constraint) {
-            $actual[$constraint->conname] = [$constraint->child, $constraint->parent, $constraint->delete_action, $constraint->update_action];
+            $actual[$constraint->conname] = [
+                $constraint->child, $constraint->source_column, $constraint->parent,
+                $constraint->target_column, $constraint->delete_action, $constraint->update_action,
+            ];
         }
         $this->assertSame([
-            'fk_book_category' => ['book', 'category', 'r', 'a'],
-            'fk_loan_item_book' => ['loan_item', 'book', 'r', 'a'],
-            'fk_loan_item_loan' => ['loan_item', 'loan', 'c', 'a'],
-            'fk_loan_member' => ['loan', 'member', 'r', 'a'],
-            'fk_loan_user' => ['loan', 'user', 'r', 'a'],
+            'fk_book_category' => ['book', 'category_id', 'category', 'id', 'r', 'a'],
+            'fk_loan_item_book' => ['loan_item', 'book_id', 'book', 'id', 'r', 'a'],
+            'fk_loan_item_loan' => ['loan_item', 'loan_id', 'loan', 'id', 'c', 'a'],
+            'fk_loan_member' => ['loan', 'member_id', 'member', 'id', 'r', 'a'],
+            'fk_loan_user' => ['loan', 'loaned_by_user_id', 'user', 'id', 'r', 'a'],
         ], $actual);
 
         $this->seedHistory();
@@ -267,7 +273,9 @@ final class SchemaMigrationTest extends TestCase
     private function seedHistory(): void
     {
         $id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-        DB::table('library.book')->insert($this->book());
+        $book = $this->book();
+        $book['title'] = 'Título histórico';
+        DB::table('library.book')->insert($book);
         DB::table('library.member')->insert(['id' => $id, 'full_name' => 'Socio de prueba', 'document_number' => 'fixture-001']);
         DB::table('library.user')->insert([
             'id' => $id, 'username' => 'fixture',
@@ -281,5 +289,6 @@ final class SchemaMigrationTest extends TestCase
             'isbn' => '9780307474728', 'category_name' => 'Novela',
             'due_at' => '2026-10-15T12:00:00Z', 'returned_at' => '2026-10-05T12:00:00Z',
         ]);
+        DB::table('library.book')->where('id', $id)->update(['title' => 'Título actual']);
     }
 }

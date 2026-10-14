@@ -29,7 +29,7 @@ jobs:
           docker run -d --name library-schema-db --network library-schema-ci \
             -e POSTGRES_DB=library_test -e POSTGRES_PASSWORD="$db_password" postgres:16 -c timezone=UTC
           for attempt in $(seq 1 30); do
-            if docker exec library-schema-db pg_isready -U postgres -d library_test; then
+            if docker exec library-schema-db pg_isready -h 127.0.0.1 -U postgres -d library_test; then
               exit 0
             fi
             sleep 1
