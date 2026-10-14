@@ -33,7 +33,20 @@ final class DomainBoundaryTest extends TestCase
         self::assertSame(['domain-ok'], $output);
     }
 
-    private static function externalNames(string $source): array
+    public function test_application_only_references_its_own_namespace_domain_and_native_php(): void
+    {
+        $allowed = ['App\\Library\\Domain', 'App\\Library\\Application'];
+        $directory = new \RecursiveDirectoryIterator(__DIR__.'/../../app/Library/Application');
+        foreach (new \RecursiveIteratorIterator($directory) as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                self::assertSame([], self::externalNames(file_get_contents($file->getPathname()), $allowed), $file->getPathname());
+            }
+        }
+        self::assertSame(['App\\Library\\Adapters\\Outbound\\Security\\Hasher', 'Illuminate\\Support\\Facades\\Hash'],
+            self::externalNames('<?php use App\\Library\\Adapters\\Outbound\\Security\\Hasher; use Illuminate\\Support\\Facades\\Hash;', $allowed));
+    }
+
+    private static function externalNames(string $source, array $allowed = ['App\\Library\\Domain']): array
     {
         $external = [];
         foreach (token_get_all($source) as $token) {
@@ -41,7 +54,11 @@ final class DomainBoundaryTest extends TestCase
                 continue;
             }
             $name = ltrim($token[1], '\\');
-            if ($name === 'App\\Library\\Domain' || str_starts_with($name, 'App\\Library\\Domain\\')) {
+            $permitted = false;
+            foreach ($allowed as $prefix) {
+                $permitted = $permitted || $name === $prefix || str_starts_with($name, $prefix.'\\');
+            }
+            if ($permitted) {
                 continue;
             }
             if (class_exists($name, false) && (new \ReflectionClass($name))->isInternal()) {
