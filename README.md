@@ -48,3 +48,197 @@ No hay prórroga: suban avances parciales con commits pequeños durante la prueb
 | [`test-manager-library-3145555-page`](https://github.com/code-sena/test-manager-library-3145555-page) | Sitio público estático de presentación |
 | [`test-manager-library-3145555-infra`](https://github.com/code-sena/test-manager-library-3145555-infra) | Contenedores, red, volúmenes y motor de base de datos vacío |
 | [`test-manager-library-3145555-tool`](https://github.com/code-sena/test-manager-library-3145555-tool) | Utilidades: sembrador de datos de demostración |
+
+## Primer avance: T-01
+
+Esta rama prepara el backend con PHP 8.4 y Laravel 13, siguiendo la
+[adaptación aprobada](https://github.com/valerysinai/test-manager-library-3145555-docs/blob/main/adaptacion-react-laravel.md).
+La única operación de producto implementada en este avance es `GET /api/v1/health`, pública,
+con respuesta HTTP 200 y cuerpo `{"status":"ok"}`. No necesita base de datos ni secretos para arrancar.
+
+### Preparar la imagen y verificar
+
+Requisito: Docker con motor Linux activo. Ejecutar desde la raíz de este repositorio:
+
+```sh
+docker build --target test -t manager-library-api:test .
+docker build -t manager-library-api:bootstrap .
+```
+
+El primer comando instala las dependencias de prueba y ejecuta PHPUnit. El segundo crea
+la imagen de ejecución con las dependencias de producción fijadas en `composer.lock`.
+PHP y Composer se ejecutan dentro del contenedor; no es necesario instalarlos en Windows.
+
+La imagen de PHP y Composer están fijados por digest/checksum. `composer.lock` se generó
+con PHP 8.4 en GitHub Actions y se conserva en el commit `b60bc27`. El paso temporal que lo
+publicó fue retirado; el flujo final tiene permisos de lectura y no crea commits.
+Las instalaciones reproducen las versiones del lockfile sin resolverlas de nuevo.
+
+### Arrancar con un comando
+
+```sh
+docker run --rm -p 127.0.0.1:8000:8000 manager-library-api:bootstrap
+```
+
+En otra terminal:
+
+```sh
+curl http://localhost:8000/api/v1/health
+```
+
+En PowerShell también se puede consultar con:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/v1/health
+```
+
+El puerto queda limitado a la máquina local. Este servidor sirve para verificar T-01;
+el despliegue integrado y la terminación HTTPS pertenecen a T-20 en `infra`.
+No se envían credenciales en este recorrido de salud. Para detenerlo, usar Ctrl+C.
+
+### Estructura y límites del avance
+
+En T-01, `app/Library/Domain`, `Application/Ports`, `Application/Services` y `Adapters/Outbound`
+reservaban las capas del diseño mediante archivos `.gitkeep`. El tercer avance implementa
+el dominio y los casos de uso de socios. El adaptador HTTP está en `Adapters/Inbound/Http`; la composición del núcleo
+tiene su único punto en `app/Providers/LibraryServiceProvider.php`.
+
+Las pruebas comprueban salud sin conexión a la base, prefijo correcto, 404, 405 y error 500
+con el sobre JSON documentado, sin revelar detalles internos incluso en modo debug.
+Esto no acredita autenticación ni el contrato completo de T-16, ni las pruebas de arquitectura de T-19.
+
+T-01 no crea tablas, usuarios, sesiones, tokens ni datos de demostración.
+La migración de T-02 se describe más abajo y vive en `database/migrations`.
+Las variables de despliegue están descritas sin valores secretos en `.env.example`;
+el archivo `.env` real y los registros de ejecución no se versionan.
+
+La evidencia de este avance y los límites de su validación están en [evidence/t-01.md](evidence/t-01.md).
+
+## Segundo avance: T-02
+
+La migración inicial crea las seis tablas de negocio en el esquema `library`, con los nombres,
+tipos, longitudes y nulabilidad de `data-model.md`. Todas sus columnas carecen de `DEFAULT`.
+También crea las relaciones, el CHECK de disponibilidad, los índices de acceso y de unicidad,
+incluido el ISBN único entre libros activos. Las cinco categorías se insertan en esa misma migración.
+No se crea ningún administrador ni otro dato de demostración.
+
+El registro técnico de Laravel se llama `public.migrations`. Es metadata de despliegue fuera
+del modelo de negocio; no es una séptima entidad de `library`. Se reporta su nombre plural y
+se conserva, mientras las seis tablas de negocio mantienen sus nombres singulares.
+
+La migración se aplica explícitamente, con las credenciales de PostgreSQL aportadas por entorno:
+
+```sh
+php artisan migrate --force
+```
+
+La API no aplica migraciones al consultar salud ni crea tablas mediante el ORM al arrancar.
+No existe DDL en `infra`. El aprovisionamiento del administrador corresponde a T-17.
+
+### Pruebas contra PostgreSQL 16
+
+El flujo `API schema` construye el objetivo Docker `integration`, crea un PostgreSQL 16 desechable
+con contraseña aleatoria en una red privada, ejecuta PHPUnit y las consultas de `data-model.md` §10,
+y retira sus contenedores y volúmenes al terminar. La contraseña no se versiona ni se muestra en logs.
+
+Para construir el runner:
+
+```sh
+docker build --target integration -t manager-library-api:integration .
+```
+
+Para ejecutar la suite fuera de CI se requiere una base **vacía y desechable** llamada `library_test`
+en PostgreSQL 16, con `DB_HOST`, `DB_DATABASE`, `DB_USERNAME` y `DB_PASSWORD` configurados para ese
+destino. El comando dentro del runner es:
+
+```sh
+php vendor/bin/phpunit --configuration phpunit.integration.xml
+```
+
+Las pruebas consultan el nombre real de la base antes de cualquier DDL, rechazan tablas ajenas
+y aplican/revierten únicamente la migración de este proyecto. No utilizan `migrate:fresh`.
+Verifican el contrato físico, las restricciones con escrituras inválidas, la conservación del
+histórico, la semilla, la repetición de `migrate`, la reversa y la reaplicación.
+
+Las CHECK documentadas para T-18 siguen pendientes: total positivo, rol válido, ISBN de 13 dígitos,
+título/documento no vacíos, usuario normalizado y portada nula o no vacía. Este avance no afirma
+que esas reglas ya estén aplicadas en el motor, ni acredita préstamos, devoluciones o concurrencia.
+
+Los resultados ejecutados están en [evidence/t-02.md](evidence/t-02.md).
+
+## Tercer avance: T-03 a T-06
+
+El dominio contiene objetos de valor para ISBN, cantidad, documento y rango de fechas;
+libros con disponibilidad y baja lógica; socios, usuarios y préstamos con sus líneas.
+Está escrito en PHP nativo, sin importar Laravel, ORM, aplicación ni adaptadores.
+El usuario normaliza su nombre y conserva únicamente un hash opaco; el hash se genera
+en el adaptador de seguridad de una tarea posterior.
+
+Un préstamo admite de uno a tres libros distintos y congela título, ISBN y categoría.
+La política comprueba los ejemplares sin devolver en todos los préstamos del socio y
+bloquea nuevos préstamos si tiene vencidos. El vencimiento es a 14 días; el estado se
+calcula con el instante recibido y los días de atraso cuentan periodos completos de 24 horas.
+La devolución afecta una sola línea y repone un ejemplar; la línea devuelta rechaza otra devolución.
+
+Las operaciones devuelven estados inmutables del préstamo y del inventario. La aplicación
+deberá persistir ambos dentro de una transacción. Estas pruebas no acreditan atomicidad
+en PostgreSQL ni protección contra solicitudes concurrentes; eso corresponde a T-13.
+
+T-06 incluye los casos de uso de crear, buscar y consultar socios detrás de `MemberRepository`,
+con paginación y conteo de libros sin devolver. Se prueban con un repositorio en memoria,
+incluyendo documento duplicado y conflicto al insertar. No hay adaptador de persistencia
+ni nuevas rutas HTTP en este avance. Autenticación y creación exclusiva de bibliotecarios
+siguen en T-07; su exposición HTTP y el rechazo de creación de administradores, en T-16.
+
+### Verificar el núcleo
+
+La construcción del objetivo `test` ejecuta las suites Domain, Application, Architecture y Feature:
+
+```sh
+docker build --target test -t manager-library-api:test .
+```
+
+Con PHP 8.4 y las dependencias de desarrollo instaladas también puede ejecutarse:
+
+```sh
+php vendor/bin/phpunit
+```
+
+La suite Architecture comprueba referencias de nombres del dominio y ejecuta un ciclo
+de préstamo/devolución en un proceso que carga exclusivamente las clases del dominio.
+Es una comprobación inicial de aislamiento; T-19 todavía debe verificar todos los límites
+de arquitectura y el punto único de composición al incorporar los adaptadores.
+
+La evidencia y la correspondencia con las tareas están en [evidence/t-03-t-06.md](evidence/t-03-t-06.md).
+
+## Cuarto avance: T-07
+
+`LoginService` y `CreateLibrarianService` usan los puertos `UserRepository`, `PasswordHasher`,
+`TokenIssuer` y `Clock`. La aplicación conoce el dominio y sus propios puertos, sin importar
+Laravel, persistencia ni adaptadores de seguridad.
+
+El inicio de sesión normaliza el nombre de usuario y verifica la contraseña sin recortarla
+ni transformarla. Usuario inexistente y contraseña incorrecta producen el mismo error
+`InvalidCredentials`, sin emitir token. El puerto de hash recibe un hash nulo cuando no hay
+usuario; el adaptador real de T-14 deberá verificar contra un hash ficticio de coste equivalente.
+El fake verifica el recorrido del puerto; no acredita equivalencia de tiempos ni Argon2id.
+
+Una sesión válida solicita un token para el ID y rol del usuario, con instantes UTC tomados
+del reloj inyectado y exactamente 28.800 segundos de vigencia. El resultado tiene los campos
+`access_token`, `token_type`, `expires_in` y `role` del contrato; su vista de depuración oculta
+el token. El fake de emisión no es un JWT: firma HS256 y validación del token se implementan en T-14.
+
+El alta exige un actor administrador autenticado y permite únicamente `librarian` como rol
+solicitado. La autorización precede a la consulta del nombre. El nombre normalizado es único;
+se conserva `UsernameTaken` si el repositorio detecta un conflicto después de la comprobación
+previa. La contraseña obligatoria no vacía pasa al puerto de hash sin añadir reglas de complejidad.
+La respuesta de alta contiene únicamente `id`, `username` y `role`.
+
+El actor y el UUID del nuevo usuario proceden del servidor. En T-16, el adaptador HTTP deberá
+obtener el actor de la autenticación verificada, rechazar campos ajenos y traducir los errores
+a 401, 403, 409 o 422 según el contrato. Este avance no añade rutas, usuarios iniciales ni bindings
+de infraestructura. La persistencia real corresponde a T-12, la seguridad a T-14 y el bootstrap
+del administrador desde entorno a T-17.
+
+La construcción Docker del objetivo `test` ejecuta también estas pruebas con fakes. Los escenarios,
+resultados y límites están en [evidence/t-07.md](evidence/t-07.md).
