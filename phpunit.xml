@@ -9,6 +9,7 @@
     <testsuites>
         <testsuite name="Domain"><directory>tests/Domain</directory></testsuite>
         <testsuite name="Application"><directory>tests/Application</directory></testsuite>
+        <testsuite name="Architecture"><directory>tests/Architecture</directory></testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
