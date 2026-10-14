@@ -113,3 +113,55 @@ Las variables de despliegue están descritas sin valores secretos en `.env.examp
 el archivo `.env` real y los registros de ejecución no se versionan.
 
 La evidencia de este avance y los límites de su validación están en [evidence/t-01.md](evidence/t-01.md).
+
+## Segundo avance: T-02
+
+La migración inicial crea las seis tablas de negocio en el esquema `library`, con los nombres,
+tipos, longitudes y nulabilidad de `data-model.md`. Todas sus columnas carecen de `DEFAULT`.
+También crea las relaciones, el CHECK de disponibilidad, los índices de acceso y de unicidad,
+incluido el ISBN único entre libros activos. Las cinco categorías se insertan en esa misma migración.
+No se crea ningún administrador ni otro dato de demostración.
+
+El registro técnico de Laravel se llama `public.migrations`. Es metadata de despliegue fuera
+del modelo de negocio; no es una séptima entidad de `library`. Se reporta su nombre plural y
+se conserva, mientras las seis tablas de negocio mantienen sus nombres singulares.
+
+La migración se aplica explícitamente, con las credenciales de PostgreSQL aportadas por entorno:
+
+```sh
+php artisan migrate --force
+```
+
+La API no aplica migraciones al consultar salud ni crea tablas mediante el ORM al arrancar.
+No existe DDL en `infra`. El aprovisionamiento del administrador corresponde a T-17.
+
+### Pruebas contra PostgreSQL 16
+
+El flujo `API schema` construye el objetivo Docker `integration`, crea un PostgreSQL 16 desechable
+con contraseña aleatoria en una red privada, ejecuta PHPUnit y las consultas de `data-model.md` §10,
+y retira sus contenedores y volúmenes al terminar. La contraseña no se versiona ni se muestra en logs.
+
+Para construir el runner:
+
+```sh
+docker build --target integration -t manager-library-api:integration .
+```
+
+Para ejecutar la suite fuera de CI se requiere una base **vacía y desechable** llamada `library_test`
+en PostgreSQL 16, con `DB_HOST`, `DB_DATABASE`, `DB_USERNAME` y `DB_PASSWORD` configurados para ese
+destino. El comando dentro del runner es:
+
+```sh
+php vendor/bin/phpunit --configuration phpunit.integration.xml
+```
+
+Las pruebas consultan el nombre real de la base antes de cualquier DDL, rechazan tablas ajenas
+y aplican/revierten únicamente la migración de este proyecto. No utilizan `migrate:fresh`.
+Verifican el contrato físico, las restricciones con escrituras inválidas, la conservación del
+histórico, la semilla, la repetición de `migrate`, la reversa y la reaplicación.
+
+Las CHECK documentadas para T-18 siguen pendientes: total positivo, rol válido, ISBN de 13 dígitos,
+título/documento no vacíos, usuario normalizado y portada nula o no vacía. Este avance no afirma
+que esas reglas ya estén aplicadas en el motor, ni acredita préstamos, devoluciones o concurrencia.
+
+Los resultados ejecutados están en [evidence/t-02.md](evidence/t-02.md).

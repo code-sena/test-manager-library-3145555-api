@@ -2,7 +2,7 @@ name: API bootstrap
 
 on:
   push:
-    branches: [main, feature/api-bootstrap]
+    branches: [main, 'feature/**']
   pull_request:
     branches: [main]
 

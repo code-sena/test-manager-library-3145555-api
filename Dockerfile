@@ -22,9 +22,13 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
     CMD php -r 'exit(@file_get_contents("http://127.0.0.1:8000/api/v1/health") === "{\"status\":\"ok\"}" ? 0 : 1);'
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload"]
 
-FROM runtime AS test
+FROM runtime AS test_dependencies
 RUN composer install --no-scripts --no-interaction --prefer-dist --no-progress \
     && composer dump-autoload --no-scripts --optimize
+FROM test_dependencies AS test
 RUN php vendor/bin/phpunit
+
+FROM test_dependencies AS integration
+CMD ["php", "vendor/bin/phpunit", "--configuration", "phpunit.integration.xml"]
 
 FROM runtime AS application
