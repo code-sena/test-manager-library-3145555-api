@@ -98,6 +98,7 @@ final readonly class Loan
 
     public function returnItem(string $itemId, Book $book, DateTimeImmutable $at): ReturnResult
     {
+        $itemId = Guard::uuid($itemId, 'item_id');
         foreach ($this->items as $index => $item) {
             if ($item->id !== $itemId) {
                 continue;
