@@ -10,39 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  lockfile:
-    if: github.event_name == 'push' && github.repository == 'valerysinai/test-manager-library-3145555-api' && github.ref == 'refs/heads/feature/api-bootstrap'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Check initial lockfile
-        id: lock
-        run: |
-          if [ -f composer.lock ]; then
-            echo 'missing=false' >> "$GITHUB_OUTPUT"
-          else
-            echo 'missing=true' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Resolve initial dependencies on PHP 8.4
-        if: steps.lock.outputs.missing == 'true'
-        run: |
-          docker build --target php_base -t manager-library-api:tools .
-          docker run --rm -v "$PWD:/app" manager-library-api:tools composer update --no-install --no-scripts --no-interaction --prefer-dist
-      - name: Persist initial lockfile on this feature branch
-        if: steps.lock.outputs.missing == 'true'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add composer.lock
-          git commit -m 'build(api): lock PHP dependencies resolved on PHP 8.4'
-          git push origin HEAD:feature/api-bootstrap
-
   bootstrap:
-    needs: lockfile
-    if: always() && (needs.lockfile.result == 'success' || needs.lockfile.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

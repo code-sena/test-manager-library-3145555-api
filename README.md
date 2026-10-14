@@ -69,11 +69,10 @@ El primer comando instala las dependencias de prueba y ejecuta PHPUnit. El segun
 la imagen de ejecución con las dependencias de producción fijadas en `composer.lock`.
 PHP y Composer se ejecutan dentro del contenedor; no es necesario instalarlos en Windows.
 
-La imagen de PHP y Composer están fijados por digest/checksum. La primera resolución de
-`composer.lock` se realiza con PHP 8.4 en el flujo de GitHub Actions y se conserva como commit
-en `feature/api-bootstrap`. Ese paso solo puede escribir en esta rama y en este fork, durante
-un push propio; nunca se ejecuta para PR de otros forks. Las pruebas usan permisos de lectura.
-Una vez presente el lockfile, las instalaciones reproducen sus versiones sin resolverlas de nuevo.
+La imagen de PHP y Composer están fijados por digest/checksum. `composer.lock` se generó
+con PHP 8.4 en GitHub Actions y se conserva en el commit `b60bc27`. El paso temporal que lo
+publicó fue retirado; el flujo final tiene permisos de lectura y no crea commits.
+Las instalaciones reproducen las versiones del lockfile sin resolverlas de nuevo.
 
 ### Arrancar con un comando
 
@@ -112,3 +111,5 @@ Este avance no crea tablas, usuarios, sesiones, tokens ni datos de demostración
 T-02 y las demás tareas siguen pendientes. Las migraciones vivirán en `database/migrations`.
 Las variables de despliegue están descritas sin valores secretos en `.env.example`;
 el archivo `.env` real y los registros de ejecución no se versionan.
+
+La evidencia de este avance y los límites de su validación están en [evidence/t-01.md](evidence/t-01.md).
