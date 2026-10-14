@@ -48,3 +48,67 @@ No hay prórroga: suban avances parciales con commits pequeños durante la prueb
 | [`test-manager-library-3145555-page`](https://github.com/code-sena/test-manager-library-3145555-page) | Sitio público estático de presentación |
 | [`test-manager-library-3145555-infra`](https://github.com/code-sena/test-manager-library-3145555-infra) | Contenedores, red, volúmenes y motor de base de datos vacío |
 | [`test-manager-library-3145555-tool`](https://github.com/code-sena/test-manager-library-3145555-tool) | Utilidades: sembrador de datos de demostración |
+
+## Primer avance: T-01
+
+Esta rama prepara el backend con PHP 8.4 y Laravel 13, siguiendo la
+[adaptación aprobada](https://github.com/valerysinai/test-manager-library-3145555-docs/blob/main/adaptacion-react-laravel.md).
+La única operación de producto implementada en este avance es `GET /api/v1/health`, pública,
+con respuesta HTTP 200 y cuerpo `{"status":"ok"}`. No necesita base de datos ni secretos para arrancar.
+
+### Preparar la imagen y verificar
+
+Requisito: Docker con motor Linux activo. Ejecutar desde la raíz de este repositorio:
+
+```sh
+docker build --target test -t manager-library-api:test .
+docker build -t manager-library-api:bootstrap .
+```
+
+El primer comando instala las dependencias de prueba y ejecuta PHPUnit. El segundo crea
+la imagen de ejecución con las dependencias de producción fijadas en `composer.lock`.
+PHP y Composer se ejecutan dentro del contenedor; no es necesario instalarlos en Windows.
+
+La imagen de PHP y Composer están fijados por digest/checksum. La primera resolución de
+`composer.lock` se realiza con PHP 8.4 en el flujo de GitHub Actions y se conserva como commit
+en `feature/api-bootstrap`. Ese paso solo puede escribir en esta rama y en este fork, durante
+un push propio; nunca se ejecuta para PR de otros forks. Las pruebas usan permisos de lectura.
+Una vez presente el lockfile, las instalaciones reproducen sus versiones sin resolverlas de nuevo.
+
+### Arrancar con un comando
+
+```sh
+docker run --rm -p 127.0.0.1:8000:8000 manager-library-api:bootstrap
+```
+
+En otra terminal:
+
+```sh
+curl http://localhost:8000/api/v1/health
+```
+
+En PowerShell también se puede consultar con:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/v1/health
+```
+
+El puerto queda limitado a la máquina local. Este servidor sirve para verificar T-01;
+el despliegue integrado y la terminación HTTPS pertenecen a T-20 en `infra`.
+No se envían credenciales en este recorrido de salud. Para detenerlo, usar Ctrl+C.
+
+### Estructura y límites del avance
+
+`app/Library/Domain`, `Application/Ports`, `Application/Services` y `Adapters/Outbound`
+reservan las capas del diseño mediante archivos `.gitkeep`. No contienen reglas de negocio
+simuladas. El adaptador HTTP está en `Adapters/Inbound/Http`; la composición del núcleo
+tiene su único punto en `app/Providers/LibraryServiceProvider.php`.
+
+Las pruebas comprueban salud sin conexión a la base, prefijo correcto, 404, 405 y error 500
+con el sobre JSON documentado, sin revelar detalles internos incluso en modo debug.
+Esto no acredita autenticación ni el contrato completo de T-16, ni las pruebas de arquitectura de T-19.
+
+Este avance no crea tablas, usuarios, sesiones, tokens ni datos de demostración.
+T-02 y las demás tareas siguen pendientes. Las migraciones vivirán en `database/migrations`.
+Las variables de despliegue están descritas sin valores secretos en `.env.example`;
+el archivo `.env` real y los registros de ejecución no se versionan.

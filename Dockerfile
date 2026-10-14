@@ -1,12 +1,11 @@
 # syntax=docker/dockerfile:1
-FROM composer:2 AS composer_binary
-
-FROM php:8.4-cli-bookworm AS php_base
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev libonig-dev libxml2-dev unzip \
+FROM php:8.4-cli-alpine@sha256:37c8c64177612b72e7f9d2c00481739c166a3708bea27c1cfd27fea1291d82d1 AS php_base
+RUN apk add --no-cache libpq oniguruma libxml2 unzip \
+    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev oniguruma-dev libxml2-dev \
     && docker-php-ext-install -j2 pdo_pgsql mbstring dom \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=composer_binary /usr/bin/composer /usr/local/bin/composer
+    && apk del .build-deps
+ADD --checksum=sha256:7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6 \
+    --chmod=755 https://getcomposer.org/download/2.10.3/composer.phar /usr/local/bin/composer
 WORKDIR /app
 ENV TZ=UTC
 
