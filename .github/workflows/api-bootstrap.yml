@@ -1,0 +1,40 @@
+name: API bootstrap
+
+on:
+  push:
+    branches: [main, feature/api-bootstrap]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || github.sha }}
+          persist-credentials: false
+      - name: Run PHP tests
+        run: docker build --target test -t manager-library-api:test .
+      - name: Build runtime
+        run: docker build -t manager-library-api:bootstrap .
+      - name: Verify container health without a database
+        shell: bash
+        run: |
+          docker run -d --name library-api-smoke -p 127.0.0.1:8000:8000 manager-library-api:bootstrap
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health > /tmp/library-health.json; then
+              test "$(cat /tmp/library-health.json)" = '{"status":"ok"}'
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs library-api-smoke
+          exit 1
+      - name: Stop verification container
+        if: always()
+        run: docker rm -f library-api-smoke || true
